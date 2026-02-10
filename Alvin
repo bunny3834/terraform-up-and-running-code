@@ -1,0 +1,94 @@
+// index.js — Full Combined Alvin WhatsApp Bot
+import { Client, LocalAuth } from "whatsapp-web.js";
+import qrcode from "qrcode-terminal";
+import fs from "fs";
+import path from "path";
+import axios from "axios";
+import dotenv from "dotenv";
+
+dotenv.config();
+const BOT_NAME = "Alvin"; // <-- Bot name here
+
+const client = new Client({
+  authStrategy: new LocalAuth({ dataPath: "./session" }),
+  puppeteer: { headless: true }
+});
+
+// ---------------------------
+// In-Memory & Persistent Storage
+// ---------------------------
+const MEMORY_FILE = "./data/memory.json";
+if (!fs.existsSync("./data")) fs.mkdirSync("./data");
+if (!fs.existsSync(MEMORY_FILE)) fs.writeFileSync(MEMORY_FILE, "{}");
+
+function getUserMemory(userId) {
+  const data = JSON.parse(fs.readFileSync(MEMORY_FILE));
+  return data[userId] || [];
+}
+
+function addUserMemory(userId, message) {
+  const data = JSON.parse(fs.readFileSync(MEMORY_FILE));
+  if (!data[userId]) data[userId] = [];
+  data[userId].push(message);
+  if (data[userId].length > 20) data[userId] = data[userId].slice(-20);
+  fs.writeFileSync(MEMORY_FILE, JSON.stringify(data, null, 2));
+}
+
+function isAdmin(number) {
+  const admins = process.env.ADMINS.split(",");
+  return admins.includes(number);
+}
+
+// ---------------------------
+// Command Loader
+// ---------------------------
+const commands = new Map();
+
+// Sample Commands
+commands.set("ping", {
+  name: "ping",
+  category: "GENERAL",
+  description: "Test Alvin's connectivity",
+  execute: async (msg) => msg.reply(`🏓 Pong! ${BOT_NAME} is alive.`)
+});
+
+commands.set("calc", {
+  name: "calc",
+  category: "TOOLS",
+  description: "Calculate a math expression",
+  usage: "!calc 2+2",
+  execute: async (msg, args) => {
+    try {
+      const result = eval(args.join(" "));
+      msg.reply(`🧮 Result: ${result}`);
+    } catch {
+      msg.reply("❌ Invalid expression");
+    }
+  }
+});
+
+commands.set("joke", {
+  name: "joke",
+  category: "TOOLS",
+  description: "Tell a funny joke",
+  execute: async (msg) => msg.reply("😂 Why did Alvin cross the road? To debug the other side!")
+});
+
+// ---------------------------
+// Menu Generator
+// ---------------------------
+function generateMenuListMessage(page = 1, itemsPerPage = 5, userId = "") {
+  const allCommands = [...commands.values()];
+  const grouped = {};
+  for (const cmd of allCommands) {
+    if (!grouped[cmd.category]) grouped[cmd.category] = [];
+    grouped[cmd.category].push(cmd);
+  }
+
+  // AI suggestion based on recent memory
+  const memory = getUserMemory(userId).join(" ").toLowerCase();
+  const suggestions = [];
+  if (memory.includes("calculate")) suggestions.push("!calc", "!joke");
+
+  const sections = Object.entries(grouped).map(([cat, cmds]) => ({
+    title:
